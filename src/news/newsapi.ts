@@ -4,6 +4,8 @@ import { News } from '../interfaces/News';
 import { MongoClient, ServerApiVersion } from 'mongodb';
 import { extract } from '@extractus/article-extractor'
 import { convert } from 'html-to-text';
+import { Category } from '../interfaces/Category';
+import { extractFromHtml } from '@extractus/article-extractor';
 
 require('dotenv').config();
 
@@ -25,14 +27,17 @@ export const fetch_newsapi = async () => {
   if (stats.collections > 0) {
     console.log("FROM CACHE");
     const collections = await db.collections();
-    let result: { [key: string]: News[] } = {};
+    let categories: Category[] = [];
 
     for await (let collection of collections) {
       const articles = await collection.find().toArray();
-      result[collection.collectionName] = articles as unknown as News[];
+      categories.push({
+        name: collection.collectionName,
+        news: articles as unknown as News[]
+      })
     }
 
-    return result;
+    return categories;
   }
 
   console.log("FROM API");
@@ -49,10 +54,14 @@ export const fetch_newsapi = async () => {
       let extracted = null;
 
       try {
-        console.info(`EXTRACTING(${category}): ${article.url}`);
-        extracted = await extract(article.url as string);
+        console.log(`EXTRACTING(${category}): ${article.url}`);
+        const res = await fetch(article.url);
+        const html = await res.text();
+        if (html) {
+          extracted = await extractFromHtml(html);
+        }
       } catch (error) {
-        console.error(`ERROR: couldn't extract: ${article.url}`);
+        console.log(`ERROR(${category}): couldn't extract: ${article.url}`);
       }
 
       return {
@@ -71,23 +80,23 @@ export const fetch_newsapi = async () => {
   const fill_db_category = async (category: string) => {
     const articles = await fetch_category(category);
     await db.collection(category).insertMany(articles);
-    let result: { [key: string]: News[] } = {};
-    result[category] = articles;
-    return result;
+    return {
+      name: category,
+      news: articles
+    } as Category;
   };
 
   const workers = [
     fill_db_category("technology"),
     fill_db_category("general"),
     fill_db_category("science"),
-    // fill_db_category("health"),
+    fill_db_category("health"),
     fill_db_category("business")
   ];
 
   const categories = await Promise.all(workers);
-  const result = categories.reduce((result, category) => ({ ...category, ...result }))
 
   await client.close();
 
-  return result;
+  return categories;
 };
