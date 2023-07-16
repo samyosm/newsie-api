@@ -9,11 +9,11 @@ import { extractFromHtml } from '@extractus/article-extractor';
 
 require('dotenv').config();
 
-const client = new MongoClient(process.env.MONGODB_URI as string, {
+const client = new MongoClient('mongodb://mongo:27017', {
   serverApi: {
     version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
+    strict: false,
+    deprecationErrors: false,
   }
 });
 
